@@ -1,0 +1,40 @@
+name: Deploy Flask via SSM (no SSH)
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Deploy on EC2 via SSM
+        run: |
+          ZIP_URL="https://codeload.github.com/${GITHUB_REPOSITORY}/zip/refs/heads/main"
+          aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Flask deploy" \
+            --parameters commands="[
+              \"set -e\",
+              \"sudo dnf install -y unzip curl python3-pip || true\",
+              \"rm -rf /tmp/app && mkdir -p /tmp/app\",
+              \"curl -fsSL ${ZIP_URL} -o /tmp/app.zip\",
+              \"unzip -qo /tmp/app.zip -d /tmp/app\",
+              \"rm -rf /opt/myapp/*\",
+              \"cp -r /tmp/app/*/ /opt/myapp/\",
+              \"pip3 install --upgrade pip\",
+              \"pip3 install -r /opt/myapp/requirements.txt\",
+              \"sudo systemctl restart myapp\"
+            ]" \
+            --output text
